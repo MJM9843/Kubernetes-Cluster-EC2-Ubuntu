@@ -1,0 +1,334 @@
+
+Your EC2 instances must have an IAM role attached with the following policy:
+json{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ec2:DescribeInstances",
+        "ec2:DescribeRegions",
+        "ec2:DescribeRouteTables",
+        "ec2:DescribeSecurityGroups",
+        "ec2:DescribeSubnets",
+        "ec2:DescribeVolumes",
+        "ec2:CreateSecurityGroup",
+        "ec2:CreateTags",
+        "ec2:DescribeVolumesModifications",
+        "ec2:ModifyInstanceAttribute",
+        "ec2:ModifyVolume",
+        "elasticloadbalancing:AddTags",
+        "elasticloadbalancing:AttachLoadBalancerToSubnets",
+        "elasticloadbalancing:ApplySecurityGroupsToLoadBalancer",
+        "elasticloadbalancing:CreateLoadBalancer",
+        "elasticloadbalancing:CreateLoadBalancerPolicy",
+        "elasticloadbalancing:CreateLoadBalancerListeners",
+        "elasticloadbalancing:ConfigureHealthCheck",
+        "elasticloadbalancing:DeleteLoadBalancer",
+        "elasticloadbalancing:DeleteLoadBalancerListeners",
+        "elasticloadbalancing:DescribeLoadBalancers",
+        "elasticloadbalancing:DescribeLoadBalancerAttributes",
+        "elasticloadbalancing:DetachLoadBalancerFromSubnets",
+        "elasticloadbalancing:DeregisterInstancesFromLoadBalancer",
+        "elasticloadbalancing:ModifyLoadBalancerAttributes",
+        "elasticloadbalancing:RegisterInstancesWithLoadBalancer",
+        "elasticloadbalancing:SetLoadBalancerPoliciesForBackendServer",
+        "elasticloadbalancing:CreateListener",
+        "elasticloadbalancing:CreateTargetGroup",
+        "elasticloadbalancing:DeleteListener",
+        "elasticloadbalancing:DeleteTargetGroup",
+        "elasticloadbalancing:DescribeListeners",
+        "elasticloadbalancing:DescribeLoadBalancerPolicies",
+        "elasticloadbalancing:DescribeTargetGroups",
+        "elasticloadbalancing:DescribeTargetHealth",
+        "elasticloadbalancing:ModifyListener",
+        "elasticloadbalancing:ModifyTargetGroup",
+        "elasticloadbalancing:RegisterTargets",
+        "elasticloadbalancing:DeregisterTargets",
+        "elasticloadbalancing:SetLoadBalancerPoliciesOfListener",
+        "iam:CreateServiceLinkedRole",
+        "kms:DescribeKey"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+How to attach IAM role:
+
+Go to AWS Console → IAM → Roles → Create Role
+Select "AWS service" → "EC2"
+Create a policy with the JSON above
+Attach the policy to the role
+Go to EC2 → Instances → Select your instance → Actions → Security → Modify IAM role 
+Attach the created role
+------------------------------------------------------------------------------------------------------------
+EC2 Instance Tags
+Tag all your Kubernetes nodes with:
+
+Key: kubernetes.io/cluster/kubernetes
+Value: owned
+
+How to add tags:
+
+EC2 Console → Instances → Select instance(s)
+Tags tab → Manage tags → Add tag
+Add the key-value pair above
+
+3. VPC Subnet Tags
+Tag your subnets based on load balancer type:
+For internet-facing load balancers (public subnets):
+
+Key: kubernetes.io/role/elb
+Value: 1
+
+For internal load balancers (private subnets):
+
+Key: kubernetes.io/role/internal-elb
+Value: 1
+
+How to add tags:
+
+VPC Console → Subnets → Select subnet
+Tags tab → Manage tags → Add tag
+------------------------------------------------------------------------------------------------------------
+Set Node ProviderID
+IMPORTANT: This must be done BEFORE installing the Cloud Controller Manager.
+Run this script on EACH node in your cluster:
+
+sudo cat > set-provider-id.sh <<'EOF'
+#!/bin/bash
+INSTANCE_ID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
+AZ=$(curl -s http://169.254.169.254/latest/meta-data/placement/availability-zone)
+NODE_NAME=$(hostname)
+
+kubectl patch node $NODE_NAME -p "{\"spec\":{\"providerID\":\"aws:///$AZ/$INSTANCE_ID\"}}"
+echo "Set ProviderID for $NODE_NAME to aws:///$AZ/$INSTANCE_ID"
+EOF
+
+chmod +x set-provider-id.sh
+sudo ./set-provider-id.sh
+------------------------------------------------------------------------------------------------------------
+kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.spec.providerID}{"\n"}{end}'
+```
+You should see output like:
+```
+ip-172-31-12-59     aws:///us-west-1a/i-01efcf414762eeeb8
+ip-172-31-11-139    aws:///us-west-1b/i-0xxxxxxxxxx
+------------------------------------------------------------------------------------------------------------
+# Check CCM status
+kubectl get pods -n kube-system -l k8s-app=aws-cloud-controller-manager
+
+# View CCM logs
+kubectl logs -n kube-system -l k8s-app=aws-cloud-controller-manager -f
+
+# List all LoadBalancer services
+kubectl get svc --all-namespaces -o wide | grep LoadBalancer
+
+# Get LoadBalancer URL
+kubectl get svc <service-name> -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
+
+# Check node ProviderIDs
+kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.spec.providerID}{"\n"}{end}'
+
+# Restart CCM
+kubectl delete pod -n kube-system -l k8s-app=aws-cloud-controller-manager
+------------------------------------------------------------------------------------------------------------
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cloud-controller-manager
+  namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: system:cloud-controller-manager
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+  - update
+- apiGroups:
+  - ""
+  resources:
+  - nodes
+  verbs:
+  - '*'
+- apiGroups:
+  - ""
+  resources:
+  - nodes/status
+  verbs:
+  - patch
+- apiGroups:
+  - ""
+  resources:
+  - services
+  verbs:
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - services/status
+  verbs:
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - serviceaccounts
+  verbs:
+  - create
+  - get
+  - list
+- apiGroups:
+  - ""
+  resources:
+  - serviceaccounts/token
+  verbs:
+  - create
+- apiGroups:
+  - ""
+  resources:
+  - persistentvolumes
+  verbs:
+  - get
+  - list
+  - update
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - endpoints
+  verbs:
+  - create
+  - get
+  - list
+  - watch
+  - update
+- apiGroups:
+  - coordination.k8s.io
+  resources:
+  - leases
+  verbs:
+  - create
+  - get
+  - list
+  - watch
+  - update
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  verbs:
+  - get
+  - list
+  - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: system:cloud-controller-manager
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:cloud-controller-manager
+subjects:
+- kind: ServiceAccount
+  name: cloud-controller-manager
+  namespace: kube-system
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: aws-cloud-controller-manager
+  namespace: kube-system
+  labels:
+    k8s-app: aws-cloud-controller-manager
+spec:
+  selector:
+    matchLabels:
+      k8s-app: aws-cloud-controller-manager
+  updateStrategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        k8s-app: aws-cloud-controller-manager
+    spec:
+      nodeSelector:
+        node-role.kubernetes.io/control-plane: ""
+      tolerations:
+      - key: node.cloudprovider.kubernetes.io/uninitialized
+        value: "true"
+        effect: NoSchedule
+      - key: node-role.kubernetes.io/control-plane
+        effect: NoSchedule
+      - key: node-role.kubernetes.io/master
+        effect: NoSchedule
+      serviceAccountName: cloud-controller-manager
+      containers:
+      - name: aws-cloud-controller-manager
+        image: registry.k8s.io/provider-aws/cloud-controller-manager:v1.27.1
+        args:
+        - --v=4
+        - --cloud-provider=aws
+        - --use-service-account-credentials=true
+        - --configure-cloud-routes=false
+        - --cluster-name=kubernetes
+        env:
+        - name: AWS_REGION
+          value: us-west-1
+        resources:
+          requests:
+            cpu: 200m
+            memory: 200Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+      hostNetwork: true
+------------------------------------------------------------------------------------------------------------
+# Load Balancer Type
+service.beta.kubernetes.io/aws-load-balancer-type: "nlb"  # or "classic"
+
+# Internal vs External
+service.beta.kubernetes.io/aws-load-balancer-internal: "true"  # for internal LB
+service.beta.kubernetes.io/aws-load-balancer-scheme: "internet-facing"  # for external LB
+
+# Cross-zone load balancing
+service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+
+# SSL/TLS
+service.beta.kubernetes.io/aws-load-balancer-ssl-cert: "arn:aws:acm:region:account:certificate/id"
+service.beta.kubernetes.io/aws-load-balancer-ssl-ports: "443"
+service.beta.kubernetes.io/aws-load-balancer-backend-protocol: "http"
+
+# Additional tags
+service.beta.kubernetes.io/aws-load-balancer-additional-resource-tags: "Key1=Value1,Key2=Value2"
+
+# Security groups
+service.beta.kubernetes.io/aws-load-balancer-extra-security-groups: "sg-xxxxxxxx,sg-yyyyyyyy"
+
+# Health check
+service.beta.kubernetes.io/aws-load-balancer-healthcheck-interval: "30"
+service.beta.kubernetes.io/aws-load-balancer-healthcheck-timeout: "10"
+service.beta.kubernetes.io/aws-load-balancer-healthcheck-healthy-threshold: "2"
+service.beta.kubernetes.io/aws-load-balancer-healthcheck-unhealthy-threshold: "2"
