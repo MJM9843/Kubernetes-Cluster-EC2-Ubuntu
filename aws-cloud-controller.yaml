@@ -305,30 +305,3 @@ spec:
             cpu: 500m
             memory: 512Mi
       hostNetwork: true
-------------------------------------------------------------------------------------------------------------
-# Load Balancer Type
-service.beta.kubernetes.io/aws-load-balancer-type: "nlb"  # or "classic"
-
-# Internal vs External
-service.beta.kubernetes.io/aws-load-balancer-internal: "true"  # for internal LB
-service.beta.kubernetes.io/aws-load-balancer-scheme: "internet-facing"  # for external LB
-
-# Cross-zone load balancing
-service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
-
-# SSL/TLS
-service.beta.kubernetes.io/aws-load-balancer-ssl-cert: "arn:aws:acm:region:account:certificate/id"
-service.beta.kubernetes.io/aws-load-balancer-ssl-ports: "443"
-service.beta.kubernetes.io/aws-load-balancer-backend-protocol: "http"
-
-# Additional tags
-service.beta.kubernetes.io/aws-load-balancer-additional-resource-tags: "Key1=Value1,Key2=Value2"
-
-# Security groups
-service.beta.kubernetes.io/aws-load-balancer-extra-security-groups: "sg-xxxxxxxx,sg-yyyyyyyy"
-
-# Health check
-service.beta.kubernetes.io/aws-load-balancer-healthcheck-interval: "30"
-service.beta.kubernetes.io/aws-load-balancer-healthcheck-timeout: "10"
-service.beta.kubernetes.io/aws-load-balancer-healthcheck-healthy-threshold: "2"
-service.beta.kubernetes.io/aws-load-balancer-healthcheck-unhealthy-threshold: "2"
