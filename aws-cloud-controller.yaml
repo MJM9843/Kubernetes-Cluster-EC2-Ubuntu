@@ -296,7 +296,7 @@ spec:
         - --cluster-name=kubernetes
         env:
         - name: AWS_REGION
-          value: us-west-1
+          value: us-west-1                              # Replace your region
         resources:
           requests:
             cpu: 200m
@@ -305,3 +305,4 @@ spec:
             cpu: 500m
             memory: 512Mi
       hostNetwork: true
+
